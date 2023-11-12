@@ -186,6 +186,10 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                     print(f"best eval loss on epoch {epoch+1} is {best_val_loss}")
             val_loss.append(best_val_loss)
             val_prep.append(eval_ppl)
+        # # Add training steps when there's no evaluation loss. Alternatively, we can add some evalutation set even for the pretraining steps
+        # else:
+
+
         if train_config.enable_fsdp:
             if rank==0:
                 print(f"Epoch {epoch+1}: train_perplexity={train_perplexity:.4f}, train_epoch_loss={train_epoch_loss:.4f}, epoch time {epoch_end_time}s")

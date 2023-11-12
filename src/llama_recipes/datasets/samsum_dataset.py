@@ -23,6 +23,7 @@ def get_preprocessed_samsum(dataset_config, tokenizer, split):
     dataset = dataset.map(apply_prompt_template, remove_columns=list(dataset.features))
 
     def tokenize_add_label(sample):
+        # note here the special token included bos_token. If just call encode without add_special_tokens=False, it will add bos_token and eos_token automatically
         prompt = tokenizer.encode(tokenizer.bos_token + sample["prompt"], add_special_tokens=False)
         summary = tokenizer.encode(sample["summary"] +  tokenizer.eos_token, add_special_tokens=False)
 
