@@ -31,7 +31,7 @@ def set_tokenizer_params(tokenizer: LlamaTokenizer):
 def byte2mb(x):
     return int(x / 2**20)
 
-def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_scheduler, gradient_accumulation_steps, train_config, fsdp_config=None, local_rank=None, rank=None):
+def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_scheduler, gradient_accumulation_steps, train_config, fsdp_config=None, local_rank=None, rank=None, wandb_run=None):
     """
     Trains the model on the given dataloader
 
@@ -100,6 +100,11 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         pbar.update(1)
 
                 pbar.set_description(f"Training Epoch: {epoch+1}/{train_config.num_epochs}, step {step}/{len(train_dataloader)} completed (loss: {loss.detach().float()})")
+                
+                # copied approach from this PR:https://github.com/facebookresearch/llama-recipes/pull/162/commits/1c6ea708159d46ad9f9b2e51790a0a0e0acb0cb8
+                if wandb_run is not None:
+                    wandb_run.log({"lr":lr_scheduler.get_last_lr()[0], "loss": loss.detach().float(), "epoch": epoch + float(step) / len(train_dataloader)})
+
             pbar.close()
 
         epoch_end_time = time.perf_counter()-epoch_start_time
@@ -134,6 +139,10 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
 
         if train_config.run_validation:
             eval_ppl, eval_epoch_loss = evaluation(model, train_config, eval_dataloader, local_rank, tokenizer)
+            
+            if wandb_run is not None:
+                    wandb_run.log({"eval_epoch_loss":eval_epoch_loss.detach().float()})
+            
             checkpoint_start_time = time.perf_counter()
             if train_config.save_model and eval_epoch_loss < best_val_loss:
                 if train_config.enable_fsdp:
@@ -214,6 +223,10 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
     #saving the training params including fsdp setting for reference.
     if train_config.enable_fsdp and not train_config.use_peft:
         save_train_params(train_config, fsdp_config, rank)
+
+    if wandb_run is not None:
+        wandb_run.finish()
+
 
     return results
 

@@ -36,3 +36,8 @@ class train_config:
     dist_checkpoint_folder: str="fine-tuned" # will be used if using FSDP
     save_optimizer: bool=False # will be used if using FSDP
     use_fast_kernels: bool = False # Enable using SDPA from PyTroch Accelerated Transformers, make use Flash Attention and Xformer memory-efficient kernels
+    use_wandb: bool = False # Enable using wandb to log training process
+    wandb_project: str = "dc_summary" # wandb project name
+    run_name: str = None # wandb run name
+    run_group: str = "FSDP" # wandb run group
+    resume_from_checkpoint: str = None # path to checkpoint to resume from

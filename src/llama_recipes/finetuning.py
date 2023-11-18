@@ -45,11 +45,16 @@ from llama_recipes.utils.train_utils import (
     get_policies
 )
 
+from pprint import pprint
+
 
 def main(**kwargs):
     # Update the configuration for the training and sharding process
     train_config, fsdp_config = TRAIN_CONFIG(), FSDP_CONFIG()
     update_config((train_config, fsdp_config), **kwargs)
+
+    pprint(f"--> Training Config: {train_config} \n")
+    pprint(f"--> FSDP Config: {fsdp_config} \n")
 
     # Set the seeds for reproducibility
     torch.cuda.manual_seed(train_config.seed)
@@ -128,10 +133,55 @@ def main(**kwargs):
     if train_config.enable_fsdp and fsdp_config.pure_bf16:
         model.to(torch.bfloat16)
 
+
+# Decide to try the route of using PeftModel.from_pretrained to load the model, 
+# as suggested by PEFT post: https://github.com/huggingface/peft/issues/184
+# current logic did not consider contrinue training from a full model check point!
     if train_config.use_peft:
-        peft_config = generate_peft_config(train_config, kwargs)
-        model = get_peft_model(model, peft_config)
+        if train_config.resume_from_checkpoint:
+            from peft import PeftModel
+            # mark_only_lora_as_trainable did not change trainable arguments, therefore i did not call it
+            # import loralib as lora
+             # only LoRA model - LoRA config above has to fit
+            if os.path.exists(train_config.resume_from_checkpoint):
+                print(f"Restarting from {train_config.resume_from_checkpoint}")
+                model = PeftModel.from_pretrained(model, train_config.resume_from_checkpoint, is_trainable=True)
+                # lora.mark_only_lora_as_trainable(model)
+
+                pprint(f"--> PEFT Config from loaded check point: {model.peft_config}")
+            else:
+                print(f"Checkpoint {train_config.resume_from_checkpoint} not found")
+
+        else:
+            peft_config = generate_peft_config(train_config, kwargs)
+            pprint(f"--> PEFT Config: {peft_config}")
+
+            model = get_peft_model(model, peft_config)  
+
+        ## code below is for loading PEFT model from checkpoint
+        ## run into error of Attempting to deserialize object on CUDA device 1 but torch.cuda.device_count() is 1. 
+        ## copied from alpaca-lora, but only consider the case of loading LORA checkpoint
+        ## Need to look into how to load full model from checkpoint in the future if doing full model training!
+            # if train_config.resume_from_checkpoint:
+            #     from peft import set_peft_model_state_dict
+
+            #     # Check the available weights and load them
+            #     checkpoint_name = os.path.join(
+            #             train_config.resume_from_checkpoint, "adapter_model.bin"
+            #         )  # only LoRA model - LoRA config above has to fit
+            #     # The two files above have a different name depending on how they were saved, but are actually the same.
+            #     if os.path.exists(checkpoint_name):
+            #         print(f"Restarting from {checkpoint_name}")
+            #         # adapters_weights = torch.load(checkpoint_name)
+            #         # set_peft_model_state_dict(model, adapters_weights)
+            #     else:
+            #         print(f"Checkpoint {checkpoint_name} not found")
+
+
         model.print_trainable_parameters()
+
+
+    
 
     #setting up FSDP if enable_fsdp is enabled
     if train_config.enable_fsdp:
@@ -224,6 +274,30 @@ def main(**kwargs):
         )
     scheduler = StepLR(optimizer, step_size=1, gamma=train_config.gamma)
 
+    if train_config.use_wandb:
+        import wandb
+        # from datetime import datetime
+        # now = datetime.now()
+        # date_string = now.strftime("%B-%d-%H-%M")
+
+        wandb_run = wandb.init(
+            # Set the project where this run will be logged
+            project = train_config.wandb_project,
+            # name = f"{train_config.run_name}-{date_string}-{local_rank}",
+            name = f"{train_config.run_name}_{local_rank}",
+            group = train_config.run_group)
+            # Track hyperparameters and run metadata)
+
+        # os.environ["WANDB_PROJECT"] = train_config.wandb_project
+        # train_config.report_to = "wandb"
+        
+        # 
+        # now = datetime.now()
+        # date_string = now.strftime("%B-%d-%H-%M")
+        # train_config.run_name = f"{train_config.run_name}-{date_string}"
+    else:
+        wandb_run = None
+
     # Start the training process
     results = train(
         model,
@@ -237,6 +311,7 @@ def main(**kwargs):
         fsdp_config if train_config.enable_fsdp else None,
         local_rank if train_config.enable_fsdp else None,
         rank if train_config.enable_fsdp else None,
+        wandb_run
     )
     if not train_config.enable_fsdp or rank==0:
         [print(f'Key: {k}, Value: {v}') for k, v in results.items()]
