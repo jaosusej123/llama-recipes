@@ -18,6 +18,7 @@ from transformers import (
     LlamaForCausalLM,
     LlamaTokenizer,
     LlamaConfig,
+    get_cosine_schedule_with_warmup,
 )
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 
@@ -272,7 +273,13 @@ def main(**kwargs):
             lr=train_config.lr,
             weight_decay=train_config.weight_decay,
         )
-    scheduler = StepLR(optimizer, step_size=1, gamma=train_config.gamma)
+
+    if train_config.use_cosine_scheduler:
+        total_length = len(train_dataloader)//train_config.gradient_accumulation_steps
+        scheduler = get_cosine_schedule_with_warmup(optimizer, train_config.warmup_steps, total_length * train_config.num_epochs)
+    else:
+        scheduler = StepLR(optimizer, step_size=1, gamma=train_config.gamma)
+    # scheduler = StepLR(optimizer, step_size=1, gamma=train_config.gamma)
 
     if train_config.use_wandb:
         import wandb
@@ -311,7 +318,8 @@ def main(**kwargs):
         fsdp_config if train_config.enable_fsdp else None,
         local_rank if train_config.enable_fsdp else None,
         rank if train_config.enable_fsdp else None,
-        wandb_run
+        wandb_run,
+        train_config.use_cosine_scheduler # if using cosine scheduler, step_scheduler will automatically be Trune in train_utils.py! This is smart
     )
     if not train_config.enable_fsdp or rank==0:
         [print(f'Key: {k}, Value: {v}') for k, v in results.items()]

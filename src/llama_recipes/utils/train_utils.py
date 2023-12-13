@@ -31,7 +31,9 @@ def set_tokenizer_params(tokenizer: LlamaTokenizer):
 def byte2mb(x):
     return int(x / 2**20)
 
-def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_scheduler, gradient_accumulation_steps, train_config, fsdp_config=None, local_rank=None, rank=None, wandb_run=None):
+# added step_sheduler from here: https://github.com/maximegmd/llama-recipes/blob/main/utils/train_utils.py
+
+def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_scheduler, gradient_accumulation_steps, train_config, fsdp_config=None, local_rank=None, rank=None, wandb_run=None, step_scheduler=False):
     """
     Trains the model on the given dataloader
 
@@ -91,6 +93,9 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         scaler.update()
                         optimizer.zero_grad()
                         pbar.update(1)
+                        if step_scheduler:
+                            # Update the learning rate as needed
+                            lr_scheduler.step()
                 else:
                     # regular backpropagation when fp16 is not used
                     loss.backward()
@@ -98,12 +103,25 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         optimizer.step()
                         optimizer.zero_grad()
                         pbar.update(1)
+                        if step_scheduler:
+                            # Update the learning rate as needed
+                            lr_scheduler.step()
 
                 pbar.set_description(f"Training Epoch: {epoch+1}/{train_config.num_epochs}, step {step}/{len(train_dataloader)} completed (loss: {loss.detach().float()})")
                 
                 # copied approach from this PR:https://github.com/facebookresearch/llama-recipes/pull/162/commits/1c6ea708159d46ad9f9b2e51790a0a0e0acb0cb8
                 if wandb_run is not None:
                     wandb_run.log({"lr":lr_scheduler.get_last_lr()[0], "loss": loss.detach().float(), "epoch": epoch + float(step) / len(train_dataloader)})
+
+                # trial to save the model in the middle of the training
+                # save each 5000 steps
+                if train_config.use_peft and train_config.use_cosine_scheduler:
+                    if step % train_config.saving_steps == 0 and step > 1:
+                        if rank==0:
+                            print(f"we are about to save the PEFT check points at steps {step}")
+                        # append step to the output_dir to avoid overwriting
+                        step_dir = train_config.output_dir + f"{step}"
+                        model.save_pretrained(step_dir)
 
             pbar.close()
 
@@ -135,7 +153,9 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
             print(f"CPU Total Peak Memory consumed during the train (max): {memtrace.cpu_peaked + memtrace.cpu_begin} GB")
 
         # Update the learning rate as needed
-        lr_scheduler.step()
+        if not step_scheduler:
+            # Update the learning rate as needed
+            lr_scheduler.step()
 
         if train_config.run_validation:
             eval_ppl, eval_epoch_loss = evaluation(model, train_config, eval_dataloader, local_rank, tokenizer)

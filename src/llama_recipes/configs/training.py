@@ -41,3 +41,6 @@ class train_config:
     run_name: str = None # wandb run name
     run_group: str = "FSDP" # wandb run group
     resume_from_checkpoint: str = None # path to checkpoint to resume from
+    use_cosine_scheduler: bool = False # Enable using cosine scheduler
+    warmup_steps: int = 200 # will be used if using cosing scheduler
+    saving_steps: int = 5000 # will be used if using cosing scheduler and PEFT
