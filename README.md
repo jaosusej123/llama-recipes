@@ -1,6 +1,6 @@
 # Llama 2 Fine-tuning / Inference Recipes, Examples and Demo Apps
 
-## Git repo here for LLaMA-recipes is used in the paper for LLaMA-Clinic. We only added minor changes to the original LLaMA-recipes code, such as the function to load for a PEFT checkpoint and to use a LR scheduler.  
+## Git repo here for LLaMA-recipes is used in the paper for LLaMA-Clinic. We only added minor changes to the original LLaMA-recipes code, such as the functions to load a PEFT checkpoint and to use a LR scheduler.  
 
 ## Below is the original README.
 
